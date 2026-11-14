@@ -1,3 +1,9 @@
+## [3.1.0](https://github.com/todoist/outline-cli/compare/v3.0.0...v3.1.0) (2026-11-14)
+
+### Features
+
+* add attachment upload, download, list and delete ([#175](https://github.com/todoist/outline-cli/issues/175)) ([44b7125](https://github.com/todoist/outline-cli/commit/44b7125fc2bf402a0dfd67a05c892c93cf5bcdce))
+
 ## [3.0.0](https://github.com/todoist/outline-cli/compare/v2.5.4...v3.0.0) (2026-11-11)
 
 ### ⚠ BREAKING CHANGES
