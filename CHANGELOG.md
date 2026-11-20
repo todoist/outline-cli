@@ -1,3 +1,9 @@
+## [3.1.1](https://github.com/todoist/outline-cli/compare/v3.1.0...v3.1.1) (2026-11-20)
+
+### Bug Fixes
+
+* **deps:** update dependency commander to v15.1.0 ([#177](https://github.com/todoist/outline-cli/issues/177)) ([9c36b10](https://github.com/todoist/outline-cli/commit/9c36b10308fdc70963b0fa452547d63378527791))
+
 ## [3.1.0](https://github.com/todoist/outline-cli/compare/v3.0.0...v3.1.0) (2026-11-14)
 
 ### Features
