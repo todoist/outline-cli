@@ -1,3 +1,9 @@
+## [3.1.4](https://github.com/todoist/outline-cli/compare/v3.1.3...v3.1.4) (2026-11-24)
+
+### Bug Fixes
+
+* **deps:** update dependency @todoist/cli-core to v2.0.1 ([#182](https://github.com/todoist/outline-cli/issues/182)) ([aa43c77](https://github.com/todoist/outline-cli/commit/aa43c776eb8fa99375cd0b30dee01b66d68b0255))
+
 ## [3.1.3](https://github.com/todoist/outline-cli/compare/v3.1.2...v3.1.3) (2026-11-23)
 
 ### Bug Fixes
