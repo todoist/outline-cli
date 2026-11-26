@@ -49,7 +49,7 @@
 		"npm": ">=11"
 	},
 	"dependencies": {
-		"@todoist/cli-core": "2.0.2",
+		"@todoist/cli-core": "2.0.3",
 		"chalk": "6.0.1",
 		"commander": "15.1.0",
 		"marked": "18.2.1",
