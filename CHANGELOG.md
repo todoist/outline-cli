@@ -1,3 +1,9 @@
+## [3.1.6](https://github.com/todoist/outline-cli/compare/v3.1.5...v3.1.6) (2026-11-26)
+
+### Bug Fixes
+
+* **deps:** update dependency oauth4webapi to v3.8.9 ([#185](https://github.com/todoist/outline-cli/issues/185)) ([e613348](https://github.com/todoist/outline-cli/commit/e613348163185ed9d8ea97c3ba1a0b6bb36c4dbb))
+
 ## [3.1.5](https://github.com/todoist/outline-cli/compare/v3.1.4...v3.1.5) (2026-11-25)
 
 ### Bug Fixes
