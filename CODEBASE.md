@@ -26,9 +26,10 @@ semantic-release on merge to `main`.
 │  ├─ skills/             # Skills for agents working on this repo (verify, fix-bug, build-feature,
 │  │                      # add-command, refactor, write-tests, learn, review-changes)
 │  ├─ checks/             # Review checks reviewers and Doistbot apply (AGENTS.md links them)
-│  └─ scripts/            # Agent tooling (verify, git hook branch guard, review worktree) and its
-│                         # tests. Not published
+│  └─ scripts/            # Agent tooling (verify, git hook branch guard, review worktree, push
+│                         # check) and its tests. Not published
 ├─ .claude/skills/        # Links to .agents/skills/, where Claude Code finds them
+├─ .claude/settings.json  # Push check hook (.codex/hooks.json for Codex)
 ├─ AGENTS.md              # Prescriptive rules: definition of done, skills, review checks, build
 │                         # commands, skill sync
 ├─ CODEBASE.md            # This file: the map
