@@ -3,6 +3,7 @@
 // rebase that only moved the base. Without this, every rebase of a verified branch, and of every
 // branch of a stack, would need verify again before it could push.
 
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { git } from './git.ts'
 import { readJson, stateDir, writeJson } from './state.ts'
@@ -24,9 +25,9 @@ export function readPassedPatches(root: string): PassedPatch[] {
 /**
  * An id for everything a commit changes since `base`, the same wherever the changes sit: git's
  * patch id ignores line numbers and file order, but not the three lines around each change, which
- * the diff sets itself whatever `diff.context` says. So a rebase that changed nothing near the
- * branch's changes keeps the id, and one that did, by a conflict or by new code next to them,
- * doesn't. `--verbatim` keeps whitespace, which the default strips, so a change inside a string or
+ * the diff sets itself whatever `diff.context` says, as it sets the algorithm and the indent
+ * heuristic. So a rebase that changed nothing near the branch's changes keeps the id, and one that
+ * did, by a conflict or by new code next to them, doesn't. `--verbatim` keeps whitespace, which the default strips, so a change inside a string or
  * to formatting changes the id. Binary files count by their full blob ids. A git older than 2.39
  * has no `--verbatim`, so every rebase there needs verify again.
  */
@@ -42,6 +43,7 @@ export function branchPatchId(root: string, base: string, commit: string): strin
         '--no-ext-diff',
         '--no-textconv',
         '--no-renames',
+        '--indent-heuristic',
         base,
         commit,
     ])
@@ -71,17 +73,26 @@ export function recordPassedPatch(root: string, base: string, commit: string): v
 /**
  * Forgets that the changes `commit` makes since `base` passed, whatever base they passed on: verify
  * is about to check them again, and a run that doesn't pass must not leave them counted as passed.
+ * When the record can't be rewritten it is removed, and when it can't be removed either this
+ * throws, since a pass it can't revoke would let a push through after a failing run.
  */
 export function forgetPassedPatch(root: string, base: string, commit: string): void {
+    const patches = readPassedPatches(root)
+    if (patches.length === 0) return
+    const patchId = branchPatchId(root, base, commit)
+    if (patchId === undefined || !patches.some((patch) => patch.patchId === patchId)) return
     try {
-        const patchId = branchPatchId(root, base, commit)
-        const patches = readPassedPatches(root)
-        if (patchId === undefined || !patches.some((patch) => patch.patchId === patchId)) return
         writeJson(patchesPath(root), {
             patches: patches.filter((patch) => patch.patchId !== patchId),
         })
     } catch {
-        // A record that can't be read or written exempts nothing either.
+        try {
+            rmSync(patchesPath(root), { force: true })
+        } catch (error) {
+            throw new Error(
+                `can't remove ${patchesPath(root)}, so a pass recorded there would outlive this run: ${(error as Error).message}`,
+            )
+        }
     }
 }
 

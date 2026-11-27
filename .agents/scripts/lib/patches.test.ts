@@ -1,3 +1,5 @@
+import { chmodSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
     branchPatchId,
@@ -6,6 +8,7 @@ import {
     readPassedPatches,
     recordPassedPatch,
 } from './patches.ts'
+import { stateDir } from './state.ts'
 import { createTempRepo, GIT_HAS_VERBATIM_PATCH_ID, type TempRepo } from './test-repo.ts'
 
 let repo: TempRepo
@@ -54,7 +57,7 @@ describe.skipIf(!GIT_HAS_VERBATIM_PATCH_ID)('branchPatchId', () => {
         repo.git(['switch', '--quiet', 'main'])
         commit('src/a.ts', `${shifted}\n`, 'main adds a comment at the top')
         repo.git(['switch', '--quiet', 'feature'])
-        repo.git(['rebase', '--quiet', 'main'])
+        expect(repo.git(['rebase', '--quiet', 'main']).status).toBe(0)
         expect(branchPatchId(repo.dir, base(), 'HEAD')).toBe(before)
     })
 
@@ -120,6 +123,30 @@ describe.skipIf(!GIT_HAS_VERBATIM_PATCH_ID)('passed patches', () => {
         expect(hasPassedPatch(repo.dir, base(), 'HEAD')).toBe(false)
         // Other changes keep theirs
         expect(readPassedPatches(repo.dir)).toHaveLength(1)
+    })
+
+    // Root writes any file, and chmod cannot make a file read-only on Windows.
+    const permissionsHold = process.getuid?.() !== 0 && process.platform !== 'win32'
+
+    it.skipIf(!permissionsHold)('removes the record when it cannot rewrite it', () => {
+        recordPassedPatch(repo.dir, base(), 'HEAD')
+        chmodSync(join(stateDir(repo.dir), 'verified-patches.json'), 0o444)
+        forgetPassedPatch(repo.dir, base(), 'HEAD')
+        expect(hasPassedPatch(repo.dir, base(), 'HEAD')).toBe(false)
+    })
+
+    it.skipIf(!permissionsHold)('fails when it can neither rewrite nor remove the record', () => {
+        recordPassedPatch(repo.dir, base(), 'HEAD')
+        const dir = stateDir(repo.dir)
+        chmodSync(join(dir, 'verified-patches.json'), 0o444)
+        chmodSync(dir, 0o555)
+        try {
+            expect(() => forgetPassedPatch(repo.dir, base(), 'HEAD')).toThrow(
+                /verified-patches\.json, so a pass recorded there would outlive this run/,
+            )
+        } finally {
+            chmodSync(dir, 0o755)
+        }
     })
 
     it('does not find changes that never passed', () => {
