@@ -34,6 +34,7 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"verify": "node .agents/scripts/verify.ts",
+		"review:worktree": "node .agents/scripts/review-worktree.ts",
 		"postinstall": "node scripts/postinstall.js",
 		"check:skill-sync": "node scripts/check-skill-sync.js",
 		"sync:skill": "npm run build && node scripts/sync-skill.js",

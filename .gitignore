@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# Local secrets, such as OUTLINE_API_TOKEN, never committed or sent to reviewers
+.env
+.env.*
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 # Agent tooling state: the verify record and its logs

@@ -24,10 +24,13 @@ semantic-release on merge to `main`.
 │                         # release.yml, issue-automation.yml
 ├─ .agents/
 │  ├─ skills/             # Skills for agents working on this repo (verify, fix-bug, build-feature,
-│  │                      # add-command, refactor, write-tests, learn)
-│  └─ scripts/            # Agent tooling (verify, git hook branch guard) and its tests. Not published
+│  │                      # add-command, refactor, write-tests, learn, review-changes)
+│  ├─ checks/             # Review checks reviewers and Doistbot apply (AGENTS.md links them)
+│  └─ scripts/            # Agent tooling (verify, git hook branch guard, review worktree) and its
+│                         # tests. Not published
 ├─ .claude/skills/        # Links to .agents/skills/, where Claude Code finds them
-├─ AGENTS.md              # Prescriptive rules: definition of done, skills, build commands, skill sync
+├─ AGENTS.md              # Prescriptive rules: definition of done, skills, review checks, build
+│                         # commands, skill sync
 ├─ CODEBASE.md            # This file: the map
 ├─ CLAUDE.md              # Imports AGENTS.md for Claude Code; nothing else
 ├─ docs/agents.md         # How the agent tooling fits together
