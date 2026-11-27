@@ -51,8 +51,8 @@ Report format:
 ```
 What changed: <one line>
 Verified:
-- <claim> — ran: <command or test>, <what it showed>
+- <claim>: ran <command or test>, <what it showed>
 Not verified:
-- <claim> — <why>
+- <claim>: <why>
 Safe because: <the one fact>, <how you proved it>   (only for shared code)
 ```
