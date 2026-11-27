@@ -30,6 +30,7 @@ semantic-release on merge to `main`.
 │                         # check) and its tests. Not published
 ├─ .claude/skills/        # Links to .agents/skills/, where Claude Code finds them
 ├─ .claude/settings.json  # Push check hook (.codex/hooks.json for Codex)
+├─ .pi/extensions/        # Push check for Pi (agent-guard.ts), tested from .agents/scripts/
 ├─ AGENTS.md              # Prescriptive rules: definition of done, skills, review checks, build
 │                         # commands, skill sync
 ├─ CODEBASE.md            # This file: the map
