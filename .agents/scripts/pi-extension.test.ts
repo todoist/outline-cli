@@ -22,7 +22,14 @@ const DRIVER = `
         if (process.env.BROKEN_UI) throw new Error('the UI is gone')
         notes.push(message)
     }
-    const ctx = { cwd, hasUI, ui: { notify } }
+    const ctx = {
+        get cwd() {
+            if (process.env.BROKEN_CONTEXT) throw new Error('the context is gone')
+            return cwd
+        },
+        hasUI,
+        ui: { notify },
+    }
     const result = await handlers.tool_call(event, ctx)
     console.log(JSON.stringify({ result: result ?? null, notes }))
 `
@@ -149,9 +156,35 @@ it('prints the notes on stderr when Pi has no UI', () => {
 
 it('allows the call when the extension itself fails, which Pi would treat as a block', () => {
     commitOnBranch('feature', 'src/b.ts')
-    const failed = drive(bash('cd "$REPO" && git push'), { env: { BROKEN_UI: '1' } })
+    const failed = drive(bash('git push'), { env: { BROKEN_CONTEXT: '1' } })
     expect(failed.result).toBeNull()
-    expect(failed.stderr).toContain('the Pi extension failed, so it allowed the action')
+    expect(failed.notes.join('\n')).toContain('the Pi extension failed, so it allowed the action')
+
+    // With no UI left to show it either, the note goes to stderr.
+    const silent = drive(bash('git push'), { env: { BROKEN_CONTEXT: '1', BROKEN_UI: '1' } })
+    expect(silent.result).toBeNull()
+    expect(silent.stderr).toContain('the Pi extension failed, so it allowed the action')
+})
+
+it('keeps a denial when showing its notes fails', () => {
+    commitOnBranch('feature', 'src/b.ts')
+    // One push it can't place, which brings a note, and one it denies.
+    const denied = drive(bash('(cd "$REPO" && git push); git push'), { env: { BROKEN_UI: '1' } })
+    expect(denied.result).toEqual({
+        block: true,
+        reason: expect.stringContaining('npm run verify'),
+    })
+    expect(denied.stderr).toContain("can't tell which folder a push runs in")
+})
+
+it('says so when the guard itself fails to run', () => {
+    commitOnBranch('feature', 'src/b.ts')
+    repo.write('.agents/scripts/guard.ts', 'this is not valid typescript (\n')
+    const failed = drive(bash('git push'))
+    expect(failed.result).toBeNull()
+    expect(failed.notes.join('\n')).toMatch(
+        /tool-start exited with code 1, so it allowed the action\. .*SyntaxError/s,
+    )
 })
 
 it('allows the call when the guard exits without reading its input or printing JSON', () => {

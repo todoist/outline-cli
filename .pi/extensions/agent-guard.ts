@@ -75,7 +75,15 @@ function runGuard(payload: Record<string, unknown>): Promise<GuardOutput> {
         child.on('error', (error) => {
             finish({ systemMessage: `agent-guard: tool-start failed to run: ${error.message}` })
         })
-        child.on('close', () => {
+        child.on('close', (code, signal) => {
+            // A guard that can't run (a syntax error, a crash) exits non-zero with only stderr.
+            if (code !== 0) {
+                const how = code === null ? `signal ${signal}` : `code ${code}`
+                finish({
+                    systemMessage: `agent-guard: tool-start exited with ${how}, so it allowed the action. ${stderr.trim()}`,
+                })
+                return
+            }
             try {
                 finish(stdout.trim() ? (JSON.parse(stdout) as GuardOutput) : {})
             } catch {
@@ -108,10 +116,20 @@ async function checkToolCall(
     if (process.env.DISABLE_AGENT_GUARD === '1' || !existsSync(GUARD)) return undefined
 
     const output = await runGuard({ tool_name: 'Bash', tool_input: { command }, cwd: ctx.cwd })
-    if (output.systemMessage) tell(ctx, output.systemMessage)
     const decision = output.hookSpecificOutput
-    if (decision?.permissionDecision !== 'deny') return undefined
-    return { block: true, reason: decision.permissionDecisionReason }
+    const result: ToolCallResult =
+        decision?.permissionDecision === 'deny'
+            ? { block: true, reason: decision.permissionDecisionReason }
+            : undefined
+    // A note that can't be shown costs only the note, never the decision.
+    if (output.systemMessage) {
+        try {
+            tell(ctx, output.systemMessage)
+        } catch {
+            process.stderr.write(`${output.systemMessage}\n`)
+        }
+    }
+    return result
 }
 
 // Pi loads an extension through its default export.
