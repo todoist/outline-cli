@@ -108,12 +108,15 @@ describe('codeFingerprint', () => {
 })
 
 describe('changedCodePaths', () => {
-    it('counts a deleted doc, but not an edited one', () => {
+    it('counts a deleted or added doc, but not an edited one', () => {
         const before = snapshot(repo.dir)
         repo.write('CHANGELOG.md', 'edited\n')
         expect(changedCodePaths(before, snapshot(repo.dir))).toEqual([])
         rmSync(join(repo.dir, 'CHANGELOG.md'))
-        expect(changedCodePaths(before, snapshot(repo.dir))).toEqual(['CHANGELOG.md'])
+        const deleted = snapshot(repo.dir)
+        expect(changedCodePaths(before, deleted)).toEqual(['CHANGELOG.md'])
+        repo.write('CHANGELOG.md', 'back\n')
+        expect(changedCodePaths(deleted, snapshot(repo.dir))).toEqual(['CHANGELOG.md'])
     })
 })
 

@@ -63,25 +63,34 @@ function namedPaths(text: string): Reference[] {
 // `testing.ts` among the fixtures), so short paths resolve against these too.
 const BASES = ['', 'src/', 'src/lib/', 'src/commands/', 'src/_fixtures/']
 
-/** The repository path a reference names, or why it doesn't resolve. */
-function resolveReference(path: string, doc: string): string | { problem: string } {
-    if (!ROOTED.test(path) && path.includes('/')) {
-        const local = relative(REPO_ROOT, resolve(dirname(doc), path))
-        if (existsSync(join(REPO_ROOT, local))) return local
-    }
-    if (ROOTED.test(path)) {
-        return existsSync(join(REPO_ROOT, path)) ? path : { problem: 'does not exist' }
-    }
-    const based = BASES.map((base) => `${base}${path}`).find((candidate) =>
-        existsSync(join(REPO_ROOT, candidate)),
-    )
-    if (based) return based
-    if (path.includes('/')) return { problem: 'does not exist' }
-    const matches = tracked.filter((candidate) => basename(candidate) === path)
-    if (matches.length === 1) return matches[0] ?? path
+const exists = (path: string) => existsSync(join(REPO_ROOT, path))
+
+/** One match, or why there isn't exactly one. */
+function only(matches: string[]): string | { problem: string } {
+    if (matches.length === 1) return matches[0] as string
     return {
         problem: matches.length === 0 ? 'does not exist' : `is ambiguous: ${matches.join(', ')}`,
     }
+}
+
+/**
+ * The repository path a reference names, or why it doesn't resolve. `files` are the paths git
+ * lists, which can include a tracked file deleted from disk, so a match must still exist.
+ */
+function resolveReference(
+    path: string,
+    doc: string,
+    files: string[] = tracked,
+): string | { problem: string } {
+    if (!ROOTED.test(path) && path.includes('/')) {
+        const local = relative(REPO_ROOT, resolve(dirname(doc), path))
+        if (exists(local)) return local
+    }
+    if (ROOTED.test(path)) return exists(path) ? path : { problem: 'does not exist' }
+    const based = BASES.map((base) => `${base}${path}`).filter(exists)
+    if (based.length > 0) return only(based)
+    if (path.includes('/')) return { problem: 'does not exist' }
+    return only(files.filter((candidate) => basename(candidate) === path && exists(candidate)))
 }
 
 function brokenReferences(text: string, doc: string): string[] {
@@ -91,7 +100,8 @@ function brokenReferences(text: string, doc: string): string[] {
         if (line === undefined) return []
         const full = join(REPO_ROOT, resolved)
         if (lstatSync(full).isDirectory()) return [`${path}:${line} names a line in a folder`]
-        const lines = readFileSync(full, 'utf8').split('\n').length
+        // A file's last line ends in a newline, which doesn't start another line.
+        const lines = readFileSync(full, 'utf8').replace(/\n$/, '').split('\n').length
         return line > lines ? [`${path}:${line} is past the end (${lines} lines)`] : []
     })
 }
@@ -106,6 +116,8 @@ describe.each(DOCS.map((path) => [relative(REPO_ROOT, path), path]))('%s', (_nam
     const text = readFileSync(path, 'utf8')
 
     it('names only files and lines that exist', () => {
+        // A doc that names nothing would pass without checking anything.
+        expect(namedPaths(text).length).toBeGreaterThan(0)
         expect(brokenReferences(text, path)).toEqual([])
     })
 
@@ -144,6 +156,29 @@ describe.each(skills)('skill %s', (skill) => {
 it('lists every skill in AGENTS.md, and only those', () => {
     const text = readFileSync(join(REPO_ROOT, 'AGENTS.md'), 'utf8')
     expect(listedUnder(text, '## Skills').toSorted()).toEqual(skills.toSorted())
+})
+
+it('lists every skill in the docs/agents.md skills table, and only those', () => {
+    const text = readFileSync(join(REPO_ROOT, 'docs/agents.md'), 'utf8')
+    const section = text.split('\n## Skills\n')[1]?.split(/\n## /)[0] ?? ''
+    const rows = [...section.matchAll(/^\| `([\w-]+)`/gm)].map((match) => match[1] ?? '')
+    expect(rows.toSorted()).toEqual(skills.toSorted())
+})
+
+describe('resolving a reference', () => {
+    const doc = join(REPO_ROOT, 'AGENTS.md')
+
+    it('rejects a tracked file that was deleted from disk without staging it', () => {
+        expect(resolveReference('gone.md', doc, ['docs/gone.md'])).toEqual({
+            problem: 'does not exist',
+        })
+    })
+
+    it('rejects a short name that more than one base folder holds', () => {
+        expect(resolveReference('auth.ts', doc)).toEqual({
+            problem: 'is ambiguous: src/lib/auth.ts, src/commands/auth.ts, src/_fixtures/auth.ts',
+        })
+    })
 })
 
 it('names only test helpers that src/_fixtures/ or @todoist/cli-core/testing export', async () => {

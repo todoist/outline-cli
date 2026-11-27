@@ -91,12 +91,15 @@ export function codeFingerprint(files: Snapshot): string {
     return hash.digest('hex')
 }
 
-/** Changed files local checks read. */
+/**
+ * Changed files local checks read: what `codeFingerprint` sees change, code by content and docs by
+ * whether they are there at all.
+ */
 export function changedCodePaths(before: Snapshot, after: Snapshot): string[] {
     return changedPaths(before, after).filter(
         (path) =>
             classify(path) === 'code' ||
-            (classify(path) === 'docs' && present(before, path) && !present(after, path)),
+            (classify(path) === 'docs' && present(before, path) !== present(after, path)),
     )
 }
 

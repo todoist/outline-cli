@@ -75,7 +75,7 @@ Each file in `src/commands/` exports a `registerXxxCommand(program)` that builds
 ## Testing
 
 - **Runner:** vitest. `npm test` (one-shot), `npm run test:watch`. It also runs the agent tooling's tests in `.agents/scripts/`.
-- **Location:** colocated `*.test.ts` next to the module under test; shared fixtures in `src/_fixtures/` (`auth.ts`, `testing.ts`, `proxy-env.ts`).
+- **Location:** colocated `*.test.ts` next to the module under test; shared fixtures in `src/_fixtures/auth.ts`, `src/_fixtures/testing.ts` and `src/_fixtures/proxy-env.ts`.
 - **Mocks:** `vi.mock` of `src/lib/api.ts` (`apiRequest`) and `src/lib/auth.ts` (`mockOutlineAuthModule()`), and a stubbed global `fetch` for the API and transport layers. `@todoist/cli-core/testing` provides `createTestProgram`, `captureConsole`, `captureStream` and `mockStdin`.
 - **Config:** `vitest.config.ts` inlines `@todoist/cli-core` so module mocks reach its imports.
 
