@@ -17,7 +17,9 @@ This repository is set up so coding agents prove their work before they call it 
 | Tests pass before a push                     | `pre-push`; CI                                                                   | Checked in CI                            |
 | Agent tooling never ships in the npm package | `.agents/scripts/package-contents.test.ts`                                       | Checked in CI                            |
 
-"Checked in CI" means every pull request runs it and shows the result. The rulesets on `main` require a pull request, not passing checks, so a red check doesn't block the merge by itself: whoever merges has to look. A local hook alone is a speed bump: `git commit --no-verify` skips it.
+"Checked in CI" means every pull request runs it and shows the result. A local hook alone is a speed bump: `git commit --no-verify` skips it.
+
+**Gap:** the rulesets on `main` require a pull request but no passing status checks, so today a red check doesn't block a merge by itself and whoever merges has to look. Making the `Lint` and `Test` jobs required status checks on the `main` ruleset would turn "checked in CI" into "enforced in CI".
 
 ## Git hooks
 
