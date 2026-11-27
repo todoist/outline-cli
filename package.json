@@ -26,9 +26,9 @@
 	"scripts": {
 		"build": "tsc",
 		"dev": "tsc --watch",
-		"type-check": "tsc --noEmit",
-		"lint:check": "oxlint src",
-		"lint:write": "oxlint src --fix",
+		"type-check": "tsc --noEmit && tsc --noEmit -p .agents/scripts",
+		"lint:check": "oxlint src .agents/scripts",
+		"lint:write": "oxlint src .agents/scripts --fix",
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
 		"test": "vitest run",
@@ -36,7 +36,8 @@
 		"postinstall": "node scripts/postinstall.js",
 		"check:skill-sync": "node scripts/check-skill-sync.js",
 		"sync:skill": "npm run build && node scripts/sync-skill.js",
-		"prepublishOnly": "npm run build && npm test"
+		"prepublishOnly": "npm run build && npm test",
+		"prepare": "lefthook install --reset-hooks-path"
 	},
 	"keywords": [
 		"outline",
