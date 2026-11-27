@@ -98,6 +98,9 @@ describe('findTargets', () => {
         ['sudo -u me git push origin main', [['push', '/w', 'main']]],
         ["env -S 'git push origin main'", [['push', '/w', 'main']]],
         ['echo main | xargs -n1 git push origin', [['push', '/w', '*']]],
+        ['echo main | xargs --max-args 1 git push origin', [['push', '/w', '*']]],
+        ['sudo --chdir /x git push', [['push', '/x', 'HEAD']]],
+        ['echo `git push origin feature`', [['push', '/w', 'feature']]],
         ['echo 1 | xargs gh pr create --head', [['pr', '/w', '*']]],
         // Commands that make a branch from what's checked out, or change what's checked out
         [
@@ -143,18 +146,21 @@ describe('findTargets', () => {
         ],
         ["git push origin 'refs/heads/*:refs/heads/*'", [['push', '/w', 'refs/heads/*']]],
         [
-            'gh -R o/r pr create --fill; gh pr new -H a; gh pr create --head=b',
+            'gh -R o/r pr create --fill; gh pr new -H a; gh pr create --head=b; gh pr create -Hc',
             [
                 ['pr', '/w', 'HEAD'],
                 ['pr', '/w', 'a'],
                 ['pr', '/w', 'b'],
+                ['pr', '/w', 'c'],
             ],
         ],
         // Nothing that sends code: comments, quotes, here-documents, dry runs, deletions, tags.
         ['git push -fn # git push', []],
         ['echo "git push"; cat <<EOF\ngit push\nEOF', []],
         ["git commit -m 'git push' <<-'END'\n\tgit push\n\tEND", [['commit', '/w', '']]],
-        ['git push --dry-run; git push -d origin old; git push --tags', []],
+        ['git push --dry-run; git push -d origin old', []],
+        // Every tag, which only the repository can list
+        ['git push --tags', [['push', '/w', '']]],
         ['gh pr view; gh pr list --state open; git fetch', []],
     ])('reads %j', (command, expected) => {
         expect(read(command)).toEqual(expected)
@@ -163,6 +169,15 @@ describe('findTargets', () => {
     it('takes the remote from an argument over --repo, as git does', () => {
         expect(findTargets('git push --repo=origin backup', '/w')[0]?.remote).toBe('backup')
         expect(findTargets('git push --repo origin', '/w')[0]?.remote).toBe('origin')
+    })
+
+    it('marks a push that also sends every tag', () => {
+        expect(findTargets('git push --tags', '/w')).toEqual([
+            { kind: 'push', dir: '/w', sources: [], tags: true },
+        ])
+        expect(findTargets('git push origin feature --tags', '/w')).toEqual([
+            { kind: 'push', dir: '/w', sources: ['feature'], tags: true },
+        ])
     })
 
     it('marks a push with no refspec as one git settings decide', () => {

@@ -16,6 +16,7 @@ import { readCommands, type ShellItem } from './shell-commands.ts'
  * - `dir`: the folder it runs in, or null when the command doesn't say, as after `cd "$REPO"`.
  * - `implicit`: a push with no refspec, so git's settings decide what it sends, to `remote` (null
  *   when the command names none).
+ * - `tags`: the push also sends every tag (`--tags`), which only the repository can list.
  */
 export type PushTarget = {
     kind: 'push' | 'pr' | 'commit' | 'create' | 'move'
@@ -23,6 +24,7 @@ export type PushTarget = {
     sources: string[]
     implicit?: boolean
     remote?: string | null
+    tags?: boolean
 }
 
 /** Shell words before a command that run the command after them. */
@@ -39,9 +41,42 @@ const WRAPPERS = new Map<string, string[]>([
     ['timeout', ['-s', '--signal', '-k', '--kill-after']],
     [
         'sudo',
-        ['-u', '--user', '-g', '--group', '-h', '--host', '-p', '--prompt', '-C', '--close-from'],
+        [
+            '-u',
+            '--user',
+            '-g',
+            '--group',
+            '-h',
+            '--host',
+            '-p',
+            '--prompt',
+            '-C',
+            '--close-from',
+            '-D',
+            '--chdir',
+        ],
     ],
-    ['xargs', ['-I', '-L', '-n', '-P', '-d', '-E', '-s', '-a', '--arg-file', '--delimiter']],
+    [
+        'xargs',
+        [
+            '-I',
+            '-L',
+            '-n',
+            '-P',
+            '-d',
+            '-E',
+            '-s',
+            '-a',
+            '--arg-file',
+            '--delimiter',
+            '--max-args',
+            '--max-lines',
+            '--max-procs',
+            '--max-chars',
+            '--eof',
+            '--process-slot-var',
+        ],
+    ],
 ])
 
 /** Shells whose `-c` runs a command given as a string. */
@@ -157,7 +192,10 @@ function skipWrappers(
             if (name === 'env' && (flag === '-S' || flag === '--split-string')) {
                 return { start: words.length, inDir, extraArgs, nested: operand ?? '' }
             }
-            if (name === 'env' && (flag === '-C' || flag === '--chdir')) {
+            const changesDir =
+                (name === 'env' && (flag === '-C' || flag === '--chdir')) ||
+                (name === 'sudo' && (flag === '-D' || flag === '--chdir'))
+            if (changesDir) {
                 inDir = resolveDir(inDir, operand ?? '')
             } else if (name === 'env' && /^-C./.test(option)) {
                 inDir = resolveDir(inDir, option.slice(2))
@@ -272,8 +310,8 @@ function readPush(args: string[], unclear: boolean): Omit<PushTarget, 'dir'> | u
     remote ??= repoOption
     if (every || (unclear && refspecs.length === 0)) return { kind: 'push', sources: ['*'] }
     if (refspecs.length === 0) {
-        // With --tags and no refspec, it pushes tags alone, which hold no new code.
-        if (tags) return undefined
+        // With --tags and no refspec, it pushes tags alone.
+        if (tags) return { kind: 'push', sources: [], tags: true }
         return { kind: 'push', sources: ['HEAD'], implicit: true, remote }
     }
     // `:` alone pushes every branch both sides have, like --all.
@@ -293,9 +331,10 @@ function readPush(args: string[], unclear: boolean): Omit<PushTarget, 'dir'> | u
         const forced = spec.replace(/^\+/, '')
         if (!forced.startsWith(':')) sources.push(forced.split(':')[0] as string)
     }
-    if (sources.length === 0) return undefined
+    if (sources.length === 0 && !tags) return undefined
     // `xargs` may add more refspecs than the command shows.
-    return { kind: 'push', sources: unclear ? ['*'] : sources }
+    if (unclear) return { kind: 'push', sources: ['*'] }
+    return tags ? { kind: 'push', sources, tags: true } : { kind: 'push', sources }
 }
 
 /**
@@ -324,6 +363,7 @@ function readGh(
         const word = words[i] as string
         if (word === '-H' || word === '--head') head = words[++i] ?? 'HEAD'
         else if (word.startsWith('--head=')) head = word.slice('--head='.length)
+        else if (/^-H./.test(word)) head = word.slice(2)
     }
     // A head in someone's fork, `owner:branch`, is still that branch.
     const source = extraArgs ? '*' : head.replace(/^[^:]*:/, '')

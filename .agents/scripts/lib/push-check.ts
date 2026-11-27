@@ -28,6 +28,8 @@ type Checkout = {
     root: string
     notes: string[]
     head: string | undefined
+    /** The branch checked out, which a commit in the same command advances. */
+    branch: string | undefined
     verified: string | undefined
     /** Read only when needed, since most checks never get that far. */
     defaultRef: () => string | undefined
@@ -100,10 +102,11 @@ export function checkCommand({
             for (const name of target.sources) checkout.created.add(name)
         } else {
             // With no refspec, git's push settings can send other branches than HEAD.
-            const sources =
+            const named =
                 target.implicit && configuredPush(path, target.remote ?? null)
                     ? ['*']
                     : target.sources
+            const sources = target.tags ? [...named, ...newTags(checkout)] : named
             for (const source of sources) {
                 const result = checkSource(checkout, source, target.kind)
                 if (result === 'ok') continue
@@ -142,6 +145,8 @@ function openCheckout(root: string, notes: string[]): Checkout {
         root,
         notes,
         head: resolveCommit(root, 'HEAD'),
+        branch:
+            git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']).stdout.trim() || undefined,
         verified: readVerified(root)?.fingerprint,
         defaultRef: () => (defaultRef ??= { ref: defaultBranchRef(root) }).ref,
         tree: () => (tree ??= codeFingerprint(snapshot(root))),
@@ -201,6 +206,26 @@ function soleRemote(root: string): string | undefined {
     return remotes.length === 1 ? remotes[0] : undefined
 }
 
+/**
+ * The tags `git push --tags` sends that may hold new code: every tag the default branch doesn't
+ * already contain, or every tag when there is no default branch.
+ */
+function newTags(checkout: Checkout): string[] {
+    const ref = checkout.defaultRef()
+    const args = ['for-each-ref', '--format=%(refname)']
+    if (ref !== undefined) args.push(`--no-merged=${ref}`)
+    return git(checkout.root, [...args, 'refs/tags'])
+        .stdout.split('\n')
+        .filter(Boolean)
+}
+
+/** Whether a commit earlier in the same command moves `source`: HEAD, or the branch checked out. */
+function advancedByCommit(checkout: Checkout, source: string): boolean {
+    const { branch } = checkout
+    if (source === 'HEAD' || checkout.created.has(source)) return true
+    return branch !== undefined && (source === branch || source === `refs/heads/${branch}`)
+}
+
 function checkSource(checkout: Checkout, source: string, kind: 'push' | 'pr'): SourceResult {
     if (source.includes('*')) return 'every'
     // HEAD, or the branch a rebase or pull moves, holds something else by the time the push runs.
@@ -219,8 +244,10 @@ function checkSource(checkout: Checkout, source: string, kind: 'push' | 'pr'): S
         } else return 'unknown'
         if (commit === undefined) return 'ok'
     }
-    // The same command commits first, so what it pushes is the working tree.
-    const fromTree = checkout.committedFirst && commit === head
+    // The same command commits first, so what it pushes is the working tree; a tag or another
+    // branch at the same commit stays where it was.
+    const fromTree =
+        checkout.committedFirst && commit === head && advancedByCommit(checkout, source)
     const fingerprint = fromTree ? checkout.tree() : codeFingerprint(snapshotCommit(root, commit))
     if (fingerprint === checkout.verified) return 'ok'
     if (onlyUncheckedChanges(checkout, fromTree ? undefined : commit)) return 'ok'
@@ -280,8 +307,8 @@ function denyReason(found: Set<SourceResult>, onlyPullRequests: boolean): string
             '',
             found.has('other')
                 ? 'Verify checks the working tree and keeps one record per checkout, so it can only ' +
-                  'vouch for what you have checked out. Check out each branch, run `npm run ' +
-                  'verify` there, and push it on its own.'
+                  'vouch for what you have checked out. Check out each branch, or the commit a tag ' +
+                  'names, run `npm run verify` there, and push it on its own.'
                 : 'Run `npm run verify` and fix what fails, then run this command again.',
         ]
         if (found.has('dirty')) {

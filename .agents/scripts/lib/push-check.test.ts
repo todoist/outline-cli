@@ -95,6 +95,16 @@ describe('pushes it checks', () => {
         expect(check(command).decision).toBe('allow')
     })
 
+    it('checks a tag at the same commit against that commit, though the command commits first', () => {
+        commitOnBranch('tagged', 'src/tagged.ts')
+        repo.git(['tag', 'v1'])
+        repo.write('src/tagged.ts', 'export const fixed = 1\n')
+        markVerified()
+        // The commit moves the branch, not the tag, so git sends the old, unverified commit.
+        expect(denial('git commit -qam fix && git push origin v1')).toContain('npm run verify')
+        expect(check('git commit -qam fix && git push origin tagged').decision).toBe('allow')
+    })
+
     it('stops a new pull request for unverified code, including one for another branch', () => {
         commitOnBranch('pull-request', 'src/feature.ts')
         expect(denial('gh pr create --fill')).toContain(
@@ -102,6 +112,18 @@ describe('pushes it checks', () => {
         )
         repo.git(['switch', '--quiet', 'main'])
         expect(denial('gh pr create --head pull-request --fill')).toContain('opens a pull request')
+        expect(denial('gh pr create -Hpull-request --fill')).toContain('opens a pull request')
+    })
+
+    it('checks every tag a --tags push sends that main does not already have', () => {
+        repo.git(['tag', 'v0.1', 'main'])
+        commitOnBranch('feature', 'src/b.ts')
+        expect(check('git push --tags').decision).toBe('allow')
+        repo.git(['tag', 'unverified'])
+        repo.git(['switch', '--quiet', 'main'])
+        markVerified()
+        expect(denial('git push --tags')).toContain('npm run verify')
+        expect(denial('git push origin main --tags')).toContain('npm run verify')
     })
 
     it('checks a push from a subfolder, and one split across lines', () => {
@@ -271,7 +293,8 @@ describe('pushes that need no verify', () => {
         expect(check('git push').decision).toBe('allow')
     })
 
-    it('allows dry runs, deletions and pushes of tags alone', () => {
+    it('allows dry runs, deletions and pushes of tags main already has', () => {
+        repo.git(['tag', 'v0.1', 'main'])
         commitOnBranch('quiet', 'src/quiet.ts')
         for (const command of [
             'git push --dry-run',
