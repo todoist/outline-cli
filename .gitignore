@@ -2,6 +2,8 @@ node_modules/
 dist/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+# Agent tooling state: the verify record and its logs
+.tmp/
 
 # npm is the package manager for this repo; other lockfiles are accidental
 pnpm-lock.yaml
