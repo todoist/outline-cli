@@ -8,10 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install           # install dependencies
 npm run build         # compile TypeScript to dist/
 npm run dev           # watch mode (rebuild on changes)
-npm run type-check    # typecheck without emitting
+npm run type-check    # type check src/ and the agent tooling (.agents/scripts)
 npm run test          # run all tests
 npx vitest run src/lib/output.test.ts  # run a single test file
-npm run lint:check    # lint with oxlint
+npm run lint:check    # lint src/ and the agent tooling with oxlint
 npm run lint:write    # lint with oxlint and auto-fix
 npm run format        # format with oxfmt
 npm run format:check  # check formatting without writing
@@ -51,6 +51,12 @@ Vitest with module mocking. Tests are colocated next to the source they cover (`
 - Build the command harness with `createTestProgram(register)` from `@todoist/cli-core/testing` (applies `exitOverride()`), then `program.parseAsync()`
 - Auth tests use tmpdir with `process.pid` for filesystem isolation
 
+## Git hooks and agent tooling
+
+- Commits and pushes to `main` are refused by the git hooks. Work on a branch.
+- Agent tooling lives in `.agents/scripts/`, never in `scripts/` (which ships in the npm package).
+- How it all fits together: [`docs/agents.md`](docs/agents.md).
+
 ## Skill Content (Agent Command Reference)
 
 The file `src/lib/skills/content.ts` exports `SKILL_CONTENT` — a comprehensive command reference that gets installed into AI agent skill directories via `ol skill install`. This is the source of truth that agents use to understand available CLI commands.
@@ -66,7 +72,7 @@ A CI check (`npm run check:skill-sync`) runs on pull requests and will fail if `
 
 ## Style
 
-- oxlint (`.oxlintrc.json`) for linting and oxfmt (`.oxfmtrc.json`) for formatting: 4-space indentation, single quotes, no semicolons, 100-character lines, auto-sorted imports. The lefthook pre-commit hook runs both on staged files
+- oxlint (`.oxlintrc.json`) for linting and oxfmt (`.oxfmtrc.json`) for formatting: 4-space indentation, single quotes, no semicolons, 100-character lines, auto-sorted imports. The lefthook pre-commit hook runs both on staged files, then the type check
 - TypeScript strict mode, target ES2022, NodeNext modules
 - Avoid `any` types and forced typecasts
 - Prefer `for` loops over `.forEach()`
