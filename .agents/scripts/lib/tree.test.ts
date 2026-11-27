@@ -1,4 +1,4 @@
-import { rmSync, utimesSync } from 'node:fs'
+import { chmodSync, rmSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { git } from './git.ts'
@@ -45,6 +45,16 @@ describe('snapshot', () => {
         rmSync(join(repo.dir, 'src/a.ts'))
         expect(changedPaths(before, snapshot(repo.dir))).toEqual(['src/a.ts'])
     })
+
+    // Root reads any file, and chmod cannot make a file unreadable on Windows.
+    it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')(
+        'fails on a file it cannot read, rather than leaving it out',
+        () => {
+            repo.write('src/secret.ts', 'export const s = 1\n')
+            chmodSync(join(repo.dir, 'src/secret.ts'), 0o000)
+            expect(() => snapshot(repo.dir)).toThrow(/EACCES/)
+        },
+    )
 
     it('sees an executable bit change', () => {
         const before = codeFingerprint(snapshot(repo.dir))

@@ -3,39 +3,55 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeJson } from './state.ts'
-import { CI_EQUIVALENTS, preflight, VERIFY_STEPS } from './steps.ts'
+import { CI_EQUIVALENTS, preflight, removeLocalOnlyEnv, VERIFY_STEPS } from './steps.ts'
 import { REPO_ROOT } from './test-repo.ts'
 import { CHECKED_WORKFLOWS } from './tree.ts'
 
 const WORKFLOWS_DIR = join(REPO_ROOT, '.github/workflows')
-const readWorkflow = (name: string) => readFileSync(join(WORKFLOWS_DIR, name), 'utf8')
+const readWorkflowFile = (name: string) => readFileSync(join(WORKFLOWS_DIR, name), 'utf8')
 
-// A line in a `run: |` script that runs a tool. The lines around them are shell guards (if, echo,
-// exit, fi).
+// A line in a `run: |` script that runs a tool, and the shell around tools that runs nothing new.
 const TOOL_LINE = /^(npm|npx|node|gh|tsc|vitest|oxlint|oxfmt)\s/
+const SHELL_LINE = /^(if|then|else|elif|fi|for|while|do|done|case|esac|echo|exit|set|#)(\s|;|$)/
+
+// A `run` key anywhere on a line: a block step, a flow mapping (`- { run: npm test }`) and the like.
+const RUN_KEY = /(^|[\s{,])run\s*:/
 
 /**
  * The commands a workflow runs: each one-line `run:`, and every tool line of a `run: |` script, so a
- * check added to a script cannot hide behind the command that was already there.
+ * check added to a script cannot hide behind the command that was already there. `unread` holds
+ * every line that runs something this can't read, such as a step written as a flow mapping or a
+ * script line that isn't a known tool, so a new check can't hide there either.
  */
-function workflowCommands(text: string): string[] {
+function readWorkflow(text: string): { commands: string[]; unread: string[] } {
     const commands: string[] = []
+    const unread: string[] = []
     const lines = text.split('\n')
-    for (const [index, line] of lines.entries()) {
+    let scriptIndent: number | undefined
+    for (const line of lines) {
+        const trimmed = line.trim()
+        if (scriptIndent !== undefined) {
+            if (!trimmed) continue
+            if (line.search(/\S/) > scriptIndent) {
+                if (TOOL_LINE.test(trimmed)) commands.push(trimmed)
+                else if (!SHELL_LINE.test(trimmed)) unread.push(trimmed)
+                continue
+            }
+            scriptIndent = undefined
+        }
         const match = line.match(/^(\s+)(?:- )?run: (.+)$/)
-        if (!match) continue
-        const [, indent = '', value = ''] = match
-        if (!value.startsWith('|')) {
-            commands.push(value.trim())
+        if (!match) {
+            if (RUN_KEY.test(line.replace(/#.*$/, ''))) unread.push(trimmed)
             continue
         }
-        for (const next of lines.slice(index + 1)) {
-            if (next.trim() && next.search(/\S/) <= indent.length) break
-            if (TOOL_LINE.test(next.trim())) commands.push(next.trim())
-        }
+        const [, indent = '', value = ''] = match
+        if (value.startsWith('|')) scriptIndent = indent.length
+        else commands.push(value.trim())
     }
-    return commands
+    return { commands, unread }
 }
+
+const workflowCommands = (text: string) => readWorkflow(text).commands
 
 /** The `on:` trigger, inline (`on: [push, pull_request]`) or as an indented block. */
 function triggers(text: string): string {
@@ -71,25 +87,52 @@ describe('reading workflows', () => {
             '    - run: npm test',
             '',
         ].join('\n')
-        expect(workflowCommands(text)).toEqual(['npm run new-check', 'npx oxlint src', 'npm test'])
+        expect(readWorkflow(text)).toEqual({
+            commands: ['npm run new-check', 'npx oxlint src', 'npm test'],
+            unread: [],
+        })
+    })
+
+    it('reports a step or script line it cannot read, rather than skipping it', () => {
+        const text = [
+            'steps:',
+            '    - { name: Docs, run: npm run check-docs }',
+            '    - run: |',
+            '          echo "checking"',
+            '          bash scripts/check-links.sh',
+            '    - name: Test',
+            '      run: npm test',
+            '',
+        ].join('\n')
+        expect(readWorkflow(text)).toEqual({
+            commands: ['npm test'],
+            unread: ['- { name: Docs, run: npm run check-docs }', 'bash scripts/check-links.sh'],
+        })
     })
 })
 
 describe('verify covers CI', () => {
+    const pullRequestWorkflows = readdirSync(WORKFLOWS_DIR)
+        .filter((name) => /\.ya?ml$/.test(name))
+        .filter((name) => runsOnPullRequests(readWorkflowFile(name)))
+
     it('reads every pull-request workflow that runs a command', () => {
-        const running = readdirSync(WORKFLOWS_DIR)
-            .filter((name) => /\.ya?ml$/.test(name))
+        const running = pullRequestWorkflows
             .filter((name) => {
-                const text = readWorkflow(name)
-                return runsOnPullRequests(text) && workflowCommands(text).length > 0
+                const { commands, unread } = readWorkflow(readWorkflowFile(name))
+                return commands.length > 0 || unread.length > 0
             })
             .map((name) => `.github/workflows/${name}`)
         expect(running.toSorted()).toEqual(CHECKED_WORKFLOWS.toSorted())
     })
 
+    it.each(pullRequestWorkflows)('can read every command %s runs', (name) => {
+        expect(readWorkflow(readWorkflowFile(name)).unread).toEqual([])
+    })
+
     it('has an equivalent for every command in those workflows, and only those', () => {
         const commands = new Set(
-            CHECKED_WORKFLOWS.flatMap((path) => workflowCommands(readWorkflow(basename(path)))),
+            CHECKED_WORKFLOWS.flatMap((path) => workflowCommands(readWorkflowFile(basename(path)))),
         )
         expect(commands.size).toBeGreaterThan(4)
         expect([...commands].toSorted()).toEqual(
@@ -137,6 +180,25 @@ describe('verify covers CI', () => {
         const step = (name: string) => VERIFY_STEPS.find((candidate) => candidate.name === name)
         expect(step('tests')?.waitFor).toContain('build')
         expect(step('skill-sync')?.after).toBe('build')
+    })
+})
+
+describe('removeLocalOnlyEnv', () => {
+    it('keeps a real Outline token and the CLI settings CI never sets away from the checks', () => {
+        const env = {
+            PATH: '/usr/bin',
+            OUTLINE_API_TOKEN: 'real-token',
+            OUTLINE_URL: 'https://wiki.example.com',
+            OL_ACCESSIBLE: '1',
+            FORCE_COLOR: '1',
+        }
+        expect(removeLocalOnlyEnv(env).toSorted()).toEqual([
+            'FORCE_COLOR',
+            'OL_ACCESSIBLE',
+            'OUTLINE_API_TOKEN',
+            'OUTLINE_URL',
+        ])
+        expect(env).toEqual({ PATH: '/usr/bin' })
     })
 })
 
@@ -206,6 +268,17 @@ describe('preflight', () => {
         })
         expect(preflight(root, '24.0.0')).toEqual([
             'node_modules does not match package-lock.json: ansi-regex 6.0.0 (lockfile: 6.1.0). Run `npm ci`.',
+        ])
+    })
+
+    it('names a package still installed after the lockfile dropped it', () => {
+        writeInstalled({
+            'node_modules/commander': { version: '1.0.0' },
+            'node_modules/vitest': { version: '2.0.0' },
+            'node_modules/left-pad': { version: '1.3.0' },
+        })
+        expect(preflight(root, '24.0.0')).toEqual([
+            'node_modules does not match package-lock.json: left-pad installed (lockfile: none). Run `npm ci`.',
         ])
     })
 

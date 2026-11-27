@@ -57,6 +57,13 @@ export const LOCAL_ONLY_ENV = [
     'FORCE_COLOR',
 ]
 
+/** Removes LOCAL_ONLY_ENV from `env`, and returns the names it removed. */
+export function removeLocalOnlyEnv(env: NodeJS.ProcessEnv): string[] {
+    const removed = LOCAL_ONLY_ENV.filter((name) => env[name] !== undefined)
+    for (const name of removed) delete env[name]
+    return removed
+}
+
 type PackageJson = {
     engines?: { node?: string }
     dependencies?: Record<string, string>
@@ -141,6 +148,12 @@ export function preflight(root: string, nodeVersion = process.versions.node): st
         } else if (version !== entry.version) {
             stale.push(`${name} ${version} (lockfile: ${entry.version})`)
         }
+    }
+    // A package removed from the lockfile but still installed would let an import of it pass here
+    // and fail after CI's clean install.
+    for (const path of Object.keys(installed)) {
+        if (!path.startsWith('node_modules/') || lock.packages[path] !== undefined) continue
+        stale.push(`${path.slice('node_modules/'.length)} installed (lockfile: none)`)
     }
     if (stale.length > 0) {
         const shown = stale.slice(0, MAX_LISTED).join(', ')
