@@ -1,4 +1,4 @@
-import { chmodSync, rmSync, utimesSync } from 'node:fs'
+import { chmodSync, rmSync, symlinkSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { git } from './git.ts'
@@ -9,7 +9,9 @@ import {
     changedSince,
     classify,
     codeFingerprint,
+    commitChanges,
     snapshot,
+    snapshotCommit,
 } from './tree.ts'
 
 let repo: TempRepo
@@ -65,6 +67,13 @@ describe('snapshot', () => {
         },
     )
 
+    it('is the same before and after a deletion is staged', () => {
+        rmSync(join(repo.dir, 'src/a.ts'))
+        const unstaged = snapshot(repo.dir)
+        repo.git(['add', '--all'])
+        expect(snapshot(repo.dir)).toEqual(unstaged)
+    })
+
     it('sees an executable bit change', () => {
         const before = codeFingerprint(snapshot(repo.dir))
         repo.run('chmod', ['+x', 'src/a.ts'])
@@ -76,6 +85,45 @@ describe('snapshot', () => {
         const before = objectCount()
         snapshot(repo.dir)
         expect(objectCount()).toBe(before)
+    })
+})
+
+describe('snapshotCommit', () => {
+    it('describes a commit exactly as the identical working tree', () => {
+        repo.write('run.sh', '#!/bin/sh\n')
+        repo.run('chmod', ['+x', 'run.sh'])
+        symlinkSync('src/a.ts', join(repo.dir, 'link'))
+        repo.write('src/naïve name.ts', 'export const n = 1\n')
+        repo.git(['add', '.'])
+        repo.git(['commit', '--quiet', '-m', 'more kinds of file'])
+        expect(snapshotCommit(repo.dir, 'HEAD')).toEqual(snapshot(repo.dir))
+        expect(snapshot(repo.dir)['run.sh']).toMatch(/^x:/)
+        expect(snapshot(repo.dir).link).toMatch(/^link:/)
+    })
+
+    it('differs from a working tree that holds more, or other content', () => {
+        const committed = codeFingerprint(snapshotCommit(repo.dir, 'HEAD'))
+        expect(codeFingerprint(snapshot(repo.dir))).toBe(committed)
+        repo.write('src/new.ts', 'new\n')
+        expect(codeFingerprint(snapshot(repo.dir))).not.toBe(committed)
+        rmSync(join(repo.dir, 'src/new.ts'))
+        repo.write('src/a.ts', 'export const a = 2\n')
+        expect(codeFingerprint(snapshot(repo.dir))).not.toBe(committed)
+    })
+})
+
+describe('commitChanges', () => {
+    it('lists what a commit changes since a base, deletions marked', () => {
+        const base = repo.git(['rev-parse', 'HEAD']).stdout.trim()
+        repo.write('src/b.ts', 'b\n')
+        repo.git(['rm', '--quiet', 'CHANGELOG.md'])
+        repo.git(['add', '.'])
+        repo.git(['commit', '--quiet', '-m', 'c'])
+        repo.write('src/uncommitted.ts', 'not in the commit\n')
+        expect(commitChanges(repo.dir, base, 'HEAD')).toEqual([
+            { path: 'CHANGELOG.md', deleted: true },
+            { path: 'src/b.ts', deleted: false },
+        ])
     })
 })
 

@@ -1,6 +1,8 @@
-// Fingerprints of the working tree, by file content. Hashing content (not mtimes) catches edits
-// made in the same second, and hashing in-process writes nothing to git's object store. Files are
-// hashed the way git hashes a blob, so the same content gets the id git would give it.
+// Fingerprints of the working tree, or of a commit, by file content. Hashing content (not mtimes)
+// catches edits made in the same second, and hashing in-process writes nothing to git's object
+// store. Files are hashed the way git hashes a blob, so a commit can be described from `git
+// ls-tree` without reading its files, and a commit that holds exactly a tree verify passed has the
+// same fingerprint.
 
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs'
@@ -41,6 +43,25 @@ function hashPath(path: string): string | undefined {
 /** The id git gives a blob with this content. */
 function blobId(content: Buffer): string {
     return createHash('sha1').update(`blob ${content.length}\0`).update(content).digest('hex')
+}
+
+/**
+ * A commit's files, described the way `snapshot` describes the working tree, from git's own blob
+ * ids: a commit that holds exactly the working tree gets the same snapshot.
+ */
+export function snapshotCommit(root: string, commit: string): Snapshot {
+    const listed = git(root, ['ls-tree', '-r', '-z', commit])
+    if (!listed.ok) throw new Error(`git ls-tree failed: ${listed.stderr.trim()}`)
+    const files: Snapshot = {}
+    for (const entry of listed.stdout.split('\0')) {
+        const match = /^(\d+) \w+ ([0-9a-f]+)\t(.*)$/s.exec(entry)
+        if (!match) continue
+        const [, mode = '', id = '', path = ''] = match
+        if (mode === '160000') files[path] = 'dir'
+        else if (mode === '120000') files[path] = `link:${id}`
+        else files[path] = `${mode === '100755' ? 'x' : '-'}:${id}`
+    }
+    return files
 }
 
 /**
@@ -120,6 +141,25 @@ export function needsChecks(root: string, path: string): boolean {
 export function changeNeedsChecks(path: string, deleted: boolean): boolean {
     const kind = classify(path)
     return kind === 'code' || (kind === 'docs' && deleted)
+}
+
+/**
+ * Files a commit changes since `base`, and whether each was deleted. Renames count as a deletion
+ * and an addition.
+ */
+export function commitChanges(
+    root: string,
+    base: string,
+    commit: string,
+): { path: string; deleted: boolean }[] {
+    const diff = git(root, ['diff', '--name-status', '--no-renames', '-z', base, commit])
+    if (!diff.ok) throw new Error(`git diff failed: ${diff.stderr.trim()}`)
+    const fields = diff.stdout.split('\0')
+    const changes: { path: string; deleted: boolean }[] = []
+    for (let i = 0; i + 1 < fields.length; i += 2) {
+        changes.push({ path: fields[i + 1] as string, deleted: fields[i] === 'D' })
+    }
+    return changes
 }
 
 /** Files that differ from `base`: committed, staged, unstaged and untracked. */
