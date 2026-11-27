@@ -78,6 +78,46 @@ it('applies the real change when a textconv driver is configured', () => {
     expect(readFileSync(join(target, 'notes.txt'), 'utf8')).toBe('hello world\n')
 })
 
+it('works when the user has diff.context set to 0', () => {
+    repo.write('src/long.ts', 'one\ntwo\nthree\nfour\nfive\n')
+    repo.git(['add', '.'])
+    repo.git(['commit', '--quiet', '-m', 'long'])
+    repo.git(['config', 'diff.context', '0'])
+    repo.write('src/long.ts', 'one\ntwo\n3\nfour\nfive\n')
+    createReviewWorktree(repo.dir, target)
+    expect(readFileSync(join(target, 'src/long.ts'), 'utf8')).toBe('one\ntwo\n3\nfour\nfive\n')
+})
+
+it('reproduces a text file that is not valid UTF-8 byte for byte', () => {
+    const latin1 = (text: string) => Buffer.from(text, 'latin1')
+    writeFileSync(join(repo.dir, 'src/notes.txt'), latin1('caf\xe9\n'))
+    repo.git(['add', '.'])
+    repo.git(['commit', '--quiet', '-m', 'notes'])
+    writeFileSync(join(repo.dir, 'src/notes.txt'), latin1('caf\xe9 cr\xe8me\n'))
+    createReviewWorktree(repo.dir, target)
+    expect([...readFileSync(join(target, 'src/notes.txt'))]).toEqual([
+        ...latin1('caf\xe9 cr\xe8me\n'),
+    ])
+})
+
+it('copies a change that is all committed, with nothing to apply', () => {
+    repo.write('src/a.ts', 'committed edit\n')
+    repo.git(['commit', '--quiet', '-am', 'edit'])
+    createReviewWorktree(repo.dir, target)
+    expect(readFileSync(join(target, 'src/a.ts'), 'utf8')).toBe('committed edit\n')
+})
+
+it('leaves out a nested repository, with its git folder and ignored files', () => {
+    repo.write('scratch/notes.md', 'notes\n')
+    repo.write('scratch/.env', 'OUTLINE_API_TOKEN=secret\n')
+    repo.write('scratch/.gitignore', '.env\n')
+    repo.git(['init', '--quiet', 'scratch'])
+    repo.write('src/new.ts', 'untracked\n')
+    expect(createReviewWorktree(repo.dir, target)).toEqual({ skipped: ['scratch/'] })
+    expect(existsSync(join(target, 'scratch'))).toBe(false)
+    expect(readFileSync(join(target, 'src/new.ts'), 'utf8')).toBe('untracked\n')
+})
+
 it('copies an untracked relative symlink as a relative symlink', () => {
     symlinkSync('../src/a.ts', join(repo.dir, 'src/link.ts'))
     createReviewWorktree(repo.dir, target)

@@ -12,13 +12,16 @@ if (!target) {
     process.exit(2)
 }
 const dir = resolve(target)
+let skipped: string[] = []
 try {
-    createReviewWorktree(CHECKOUT_ROOT, dir)
+    ;({ skipped } = createReviewWorktree(CHECKOUT_ROOT, dir))
 } catch (error) {
     console.error(`review-worktree: ${(error as Error).message}`)
     process.exit(1)
 }
 const quoted = `'${dir.replaceAll("'", "'\\''")}'`
 console.log(`Review worktree ready: ${dir}`)
+for (const path of skipped)
+    console.log(`Left out ${path}: a nested git repository, not part of the change.`)
 console.log(`Install dependencies there before running anything: cd ${quoted} && npm ci`)
 console.log(`Remove it when done: git worktree remove --force ${quoted}`)
