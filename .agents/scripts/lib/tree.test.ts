@@ -3,7 +3,14 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { git } from './git.ts'
 import { createTempRepo, REPO_ROOT, type TempRepo } from './test-repo.ts'
-import { changedPaths, changedSince, classify, codeFingerprint, snapshot } from './tree.ts'
+import {
+    changedCodePaths,
+    changedPaths,
+    changedSince,
+    classify,
+    codeFingerprint,
+    snapshot,
+} from './tree.ts'
 
 let repo: TempRepo
 
@@ -11,6 +18,8 @@ beforeEach(() => {
     repo = createTempRepo()
     repo.write('src/a.ts', 'export const a = 1\n')
     repo.write('README.md', 'readme\n')
+    repo.write('CHANGELOG.md', '# Changelog\n')
+    repo.write('.nvmrc', '24\n')
     repo.write('.gitignore', 'ignored/\n')
     repo.git(['add', '.'])
     repo.git(['commit', '--quiet', '-m', 'initial'])
@@ -71,10 +80,18 @@ describe('snapshot', () => {
 })
 
 describe('codeFingerprint', () => {
-    it('ignores the changelog and .nvmrc, which no local check reads', () => {
+    it('ignores edits to the changelog and .nvmrc, which no local check reads', () => {
         const before = codeFingerprint(snapshot(repo.dir))
-        repo.write('CHANGELOG.md', '# Changelog\n')
+        repo.write('CHANGELOG.md', '# Changelog\n\n## 1.0.0\n')
         repo.write('.nvmrc', '26\n')
+        expect(codeFingerprint(snapshot(repo.dir))).toBe(before)
+    })
+
+    it('changes when the changelog is deleted or added, since the agent docs may name it', () => {
+        const before = codeFingerprint(snapshot(repo.dir))
+        rmSync(join(repo.dir, 'CHANGELOG.md'))
+        expect(codeFingerprint(snapshot(repo.dir))).not.toBe(before)
+        repo.write('CHANGELOG.md', 'back again\n')
         expect(codeFingerprint(snapshot(repo.dir))).toBe(before)
     })
 
@@ -90,6 +107,16 @@ describe('codeFingerprint', () => {
     })
 })
 
+describe('changedCodePaths', () => {
+    it('counts a deleted doc, but not an edited one', () => {
+        const before = snapshot(repo.dir)
+        repo.write('CHANGELOG.md', 'edited\n')
+        expect(changedCodePaths(before, snapshot(repo.dir))).toEqual([])
+        rmSync(join(repo.dir, 'CHANGELOG.md'))
+        expect(changedCodePaths(before, snapshot(repo.dir))).toEqual(['CHANGELOG.md'])
+    })
+})
+
 describe('classify', () => {
     it.each([
         ['CHANGELOG.md', 'docs'],
@@ -97,7 +124,10 @@ describe('classify', () => {
         ['README.md', 'code'],
         ['CONTRIBUTING.md', 'code'],
         ['CLAUDE.md', 'code'],
+        ['AGENTS.md', 'code'],
+        ['CODEBASE.md', 'code'],
         ['docs/agents.md', 'code'],
+        ['.agents/skills/verify/SKILL.md', 'code'],
         ['renovate.json', 'code'],
         ['.github/workflows/lint.yml', 'code'],
         ['.github/workflows/test.yml', 'code'],

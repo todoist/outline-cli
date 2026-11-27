@@ -22,8 +22,12 @@ semantic-release on merge to `main`.
 ├─ skills/outline-cli/    # Generated SKILL.md (from src/lib/skills/content.ts)
 ├─ .github/workflows/     # lint.yml, test.yml, check-skill-sync.yml, check-semantic-pull-request.yml,
 │                         # release.yml, issue-automation.yml
-├─ .agents/scripts/       # Agent tooling (verify, git hook branch guard) and its tests. Not published
-├─ AGENTS.md              # Prescriptive rules: definition of done, build commands, skill sync
+├─ .agents/
+│  ├─ skills/             # Skills for agents working on this repo (verify, fix-bug, build-feature,
+│  │                      # add-command, refactor, write-tests, learn)
+│  └─ scripts/            # Agent tooling (verify, git hook branch guard) and its tests. Not published
+├─ .claude/skills/        # Links to .agents/skills/, where Claude Code finds them
+├─ AGENTS.md              # Prescriptive rules: definition of done, skills, build commands, skill sync
 ├─ CODEBASE.md            # This file: the map
 ├─ CLAUDE.md              # Imports AGENTS.md for Claude Code; nothing else
 ├─ docs/agents.md         # How the agent tooling fits together

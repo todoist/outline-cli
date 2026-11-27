@@ -3,7 +3,7 @@
 // hashed the way git hashes a blob, so the same content gets the id git would give it.
 
 import { createHash } from 'node:crypto'
-import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { git } from './git.ts'
 
@@ -74,26 +74,49 @@ export function classify(path: string): FileKind {
     return 'code'
 }
 
+const present = (files: Snapshot, path: string) => files[path] !== undefined
+
 /**
  * Hash of every file local checks read, so editing docs, or files only CI reads, after a pass
- * keeps it valid.
+ * keeps it valid. Docs count by name: the agent docs may name one, so adding, renaming or deleting
+ * a doc means checking again.
  */
 export function codeFingerprint(files: Snapshot): string {
     const hash = createHash('sha256')
     for (const path of Object.keys(files).sort()) {
-        if (classify(path) === 'code') hash.update(`${path}\0${files[path]}\n`)
+        const kind = classify(path)
+        if (kind === 'code') hash.update(`${path}\0${files[path]}\n`)
+        else if (kind === 'docs' && present(files, path)) hash.update(`${path}\0doc\n`)
     }
     return hash.digest('hex')
 }
 
 /** Changed files local checks read. */
 export function changedCodePaths(before: Snapshot, after: Snapshot): string[] {
-    return changedPaths(before, after).filter((path) => classify(path) === 'code')
+    return changedPaths(before, after).filter(
+        (path) =>
+            classify(path) === 'code' ||
+            (classify(path) === 'docs' && present(before, path) && !present(after, path)),
+    )
 }
 
 export function changedPaths(before: Snapshot, after: Snapshot): string[] {
     const paths = new Set([...Object.keys(before), ...Object.keys(after)])
     return [...paths].filter((path) => before[path] !== after[path]).sort()
+}
+
+/**
+ * Whether a file that differs from the default branch needs the checks: code, or a doc that was
+ * deleted or renamed, since the agent docs may name it.
+ */
+export function needsChecks(root: string, path: string): boolean {
+    return changeNeedsChecks(path, !existsSync(join(root, path)))
+}
+
+/** `needsChecks` for a change whose deletion is already known, such as one in a commit. */
+export function changeNeedsChecks(path: string, deleted: boolean): boolean {
+    const kind = classify(path)
+    return kind === 'code' || (kind === 'docs' && deleted)
 }
 
 /** Files that differ from `base`: committed, staged, unstaged and untracked. */
