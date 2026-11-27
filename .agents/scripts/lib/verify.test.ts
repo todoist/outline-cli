@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readVerified, stateDir, writeVerified } from './state.ts'
@@ -113,6 +113,14 @@ describe('a code change', () => {
         expect(readVerified(repo.dir)).toBeUndefined()
     })
 
+    it('names a doc a step adds during the run', async () => {
+        rmSync(join(repo.dir, 'CHANGELOG.md'))
+        const writer = pass('tests', { args: ['-c', 'echo "# Changelog" > CHANGELOG.md'] })
+        const result = await verify([pass('lint'), writer])
+        expect(result).toEqual({ ok: false, recorded: false })
+        expect(lines.at(-1)).toContain('Files changed during the run: CHANGELOG.md.')
+    })
+
     it('keeps an earlier pass when only files CI alone reads changed', async () => {
         repo.write('src/a.ts', 'export const a = 2\n')
         await verify([pass('lint')])
@@ -175,6 +183,11 @@ describe('what counts as a change', () => {
 
     it('runs the checks when any workflow changes, since a local test reads them all', async () => {
         repo.write('.github/workflows/release.yml', 'on: push\n')
+        expect(await verify([pass('lint')])).toEqual({ ok: true, recorded: true })
+    })
+
+    it('runs the checks when a doc is deleted, since the agent docs may name it', async () => {
+        rmSync(join(repo.dir, 'CHANGELOG.md'))
         expect(await verify([pass('lint')])).toEqual({ ok: true, recorded: true })
     })
 

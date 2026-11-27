@@ -22,8 +22,12 @@ semantic-release on merge to `main`.
 ├─ skills/outline-cli/    # Generated SKILL.md (from src/lib/skills/content.ts)
 ├─ .github/workflows/     # lint.yml, test.yml, check-skill-sync.yml, check-semantic-pull-request.yml,
 │                         # release.yml, issue-automation.yml
-├─ .agents/scripts/       # Agent tooling (verify, git hook branch guard) and its tests. Not published
-├─ AGENTS.md              # Prescriptive rules: definition of done, build commands, skill sync
+├─ .agents/
+│  ├─ skills/             # Skills for agents working on this repo (verify, fix-bug, build-feature,
+│  │                      # add-command, refactor, write-tests, learn)
+│  └─ scripts/            # Agent tooling (verify, git hook branch guard) and its tests. Not published
+├─ .claude/skills/        # Links to .agents/skills/, where Claude Code finds them
+├─ AGENTS.md              # Prescriptive rules: definition of done, skills, build commands, skill sync
 ├─ CODEBASE.md            # This file: the map
 ├─ CLAUDE.md              # Imports AGENTS.md for Claude Code; nothing else
 ├─ docs/agents.md         # How the agent tooling fits together
@@ -71,7 +75,7 @@ Each file in `src/commands/` exports a `registerXxxCommand(program)` that builds
 ## Testing
 
 - **Runner:** vitest. `npm test` (one-shot), `npm run test:watch`. It also runs the agent tooling's tests in `.agents/scripts/`.
-- **Location:** colocated `*.test.ts` next to the module under test; shared fixtures in `src/_fixtures/` (`auth.ts`, `testing.ts`, `proxy-env.ts`).
+- **Location:** colocated `*.test.ts` next to the module under test; shared fixtures in `src/_fixtures/auth.ts`, `src/_fixtures/testing.ts` and `src/_fixtures/proxy-env.ts`.
 - **Mocks:** `vi.mock` of `src/lib/api.ts` (`apiRequest`) and `src/lib/auth.ts` (`mockOutlineAuthModule()`), and a stubbed global `fetch` for the API and transport layers. `@todoist/cli-core/testing` provides `createTestProgram`, `captureConsole`, `captureStream` and `mockStdin`.
 - **Config:** `vitest.config.ts` inlines `@todoist/cli-core` so module mocks reach its imports.
 
