@@ -1,12 +1,13 @@
 // The push check. Before an agent runs a shell command, it stops one that pushes code from this
 // checkout, or another worktree of it, that `npm run verify` hasn't passed, or opens a pull request
 // for it. A push sends commits, not the working tree, so what's pushed has to be exactly a tree
-// verify passed. Changes that verify records nothing for (docs, files only CI reads) need no
-// verify.
+// verify passed, or the same changes as one on a newer default branch, as after a rebase. Changes
+// that verify records nothing for (docs, files only CI reads) need no verify.
 
 import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { branchBase, defaultBranchRef, findRepoRoot, git, resolveCommit } from './git.ts'
+import { hasPassedPatch, recordPassedPatch } from './patches.ts'
 import { findTargets } from './push-targets.ts'
 import { readVerified } from './state.ts'
 import {
@@ -14,9 +15,9 @@ import {
     changeNeedsChecks,
     codeFingerprint,
     commitChanges,
+    commitFingerprint,
     needsChecks,
     snapshot,
-    snapshotCommit,
 } from './tree.ts'
 
 export type PushVerdict =
@@ -248,9 +249,20 @@ function checkSource(checkout: Checkout, source: string, kind: 'push' | 'pr'): S
     // branch at the same commit stays where it was.
     const fromTree =
         checkout.committedFirst && commit === head && advancedByCommit(checkout, source)
-    const fingerprint = fromTree ? checkout.tree() : codeFingerprint(snapshotCommit(root, commit))
-    if (fingerprint === checkout.verified) return 'ok'
-    if (onlyUncheckedChanges(checkout, fromTree ? undefined : commit)) return 'ok'
+    const fingerprint = fromTree ? checkout.tree() : commitFingerprint(root, commit)
+    // From the pushed commit: the branch checked out may have left main somewhere else.
+    const base = branchBase(root, checkout.defaultRef(), fromTree ? 'HEAD' : commit)
+    if (fingerprint === checkout.verified) {
+        // So the same changes can push again after a rebase without verifying again. A commit the
+        // same command makes doesn't exist yet; its next push records it.
+        if (base !== undefined && !fromTree) recordPassedPatch(root, base, commit)
+        return 'ok'
+    }
+    if (onlyUncheckedChanges(root, base, fromTree ? undefined : commit)) return 'ok'
+    if (base !== undefined && !fromTree && hasPassedPatch(root, base, commit)) {
+        notes.push(`${source} holds changes that already passed verify, so it isn't verified again`)
+        return 'ok'
+    }
 
     if (!fromTree && commit !== head) return 'other'
     if (!fromTree && checkout.tree() !== fingerprint) return 'dirty'
@@ -263,10 +275,11 @@ function checkSource(checkout: Checkout, source: string, kind: 'push' | 'pr'): S
  * checks the whole tree, and records a pass, when there is no default branch to compare with, so
  * then nothing is exempt.
  */
-function onlyUncheckedChanges(checkout: Checkout, commit: string | undefined): boolean {
-    const { root } = checkout
-    // From the pushed commit: the branch checked out may have left main somewhere else.
-    const base = branchBase(root, checkout.defaultRef(), commit ?? 'HEAD')
+function onlyUncheckedChanges(
+    root: string,
+    base: string | undefined,
+    commit: string | undefined,
+): boolean {
     if (base === undefined) return false
     if (commit === undefined)
         return !changedSince(root, base).some((path) => needsChecks(root, path))
